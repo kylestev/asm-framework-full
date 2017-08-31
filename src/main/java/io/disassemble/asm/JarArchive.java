@@ -3,7 +3,6 @@ package io.disassemble.asm;
 import com.linkedin.parseq.MultiException;
 import io.disassemble.asm.util.Security;
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.tree.ClassNode;
 
@@ -15,7 +14,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -168,7 +167,7 @@ public class JarArchive extends Archive {
      * @throws IOException If an error occurs while manipulating an output stream
      */
     public void write(File destinationFile, int writerFlags) throws IOException {
-        write(destinationFile, writerFlags, x -> x);
+        write(destinationFile, writerFlags, () -> new CustomClassWriter(this, writerFlags));
     }
 
     /**
@@ -178,7 +177,7 @@ public class JarArchive extends Archive {
      * @param writerFlags     The ClassWriter flags to use.
      * @throws IOException If an error occurs while manipulating an output stream
      */
-    public void write(File destinationFile, int writerFlags, Function<ClassWriter, ClassVisitor> writerFactory) throws IOException {
+    public void write(File destinationFile, int writerFlags, Supplier<ClassWriter> writerFactory) throws IOException {
         if (!built()) {
             throw new IllegalStateException("You cannot write a JarArchive until it has been built.");
         }
@@ -190,9 +189,8 @@ public class JarArchive extends Archive {
                 ClassFactory factory = entry.getValue();
                 String entryKey = factory.name().replaceAll("\\.", "/") + ".class";
                 output.putNextEntry(new JarEntry(entryKey));
-                ClassWriter writer = new CustomClassWriter(this, writerFlags);
-                ClassVisitor cv = writerFactory.apply(writer);
-                factory.node.accept(cv);
+                ClassWriter writer = writerFactory.get();
+                factory.node.accept(writer);
                 byte[] bytes = writer.toByteArray();
                 if (manifest != null) {
                     hashes.put(entryKey, Security.b64SHA1(bytes));
